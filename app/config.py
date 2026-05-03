@@ -12,7 +12,7 @@ DEFAULT_WIDTH = int(os.getenv("DEFAULT_WIDTH", "512"))
 DEFAULT_HEIGHT = int(os.getenv("DEFAULT_HEIGHT", "896"))
 
 # Generation defaults
-DEFAULT_GUIDANCE_SCALE = float(os.getenv("DEFAULT_GUIDANCE_SCALE", "7.5"))
+DEFAULT_GUIDANCE_SCALE = float(os.getenv("DEFAULT_GUIDANCE_SCALE", "9.0"))
 DEFAULT_NUM_INFERENCE_STEPS = int(os.getenv("DEFAULT_NUM_INFERENCE_STEPS", "50"))
 
 # Hardware — prefer CPU; enable GPU only when CUDA is available and VRAM permits

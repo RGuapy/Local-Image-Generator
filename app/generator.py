@@ -31,6 +31,7 @@ class Task:
     progress: float = 0.0
     error: Optional[str] = None
     output_path: Optional[Path] = None
+    prompt_truncated: bool = False
     created_at: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -79,6 +80,10 @@ def _run_generation(task: Task, request: GenerateRequest) -> None:
             pipe = _load_pipeline()
             device = _resolve_device()
 
+            token_ids = pipe.tokenizer(request.prompt).input_ids
+            if len(token_ids) > 77:
+                task.prompt_truncated = True
+
             generator = None
             if request.seed is not None:
                 generator = torch.Generator(device=device).manual_seed(request.seed)
@@ -93,6 +98,7 @@ def _run_generation(task: Task, request: GenerateRequest) -> None:
 
             result = pipe(
                 prompt=request.prompt,
+                negative_prompt=request.negative_prompt,
                 width=request.width,
                 height=request.height,
                 guidance_scale=request.guidance_scale,

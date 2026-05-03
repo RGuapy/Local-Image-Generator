@@ -76,6 +76,7 @@ async def get_status(task_id: str):
         status=task.status,
         progress=task.progress,
         error=task.error,
+        prompt_truncated=task.prompt_truncated or None,
     )
 
 

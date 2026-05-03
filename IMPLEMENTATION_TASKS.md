@@ -46,6 +46,11 @@
 - [ ] Validate 9:16 image output and file save path
 - [ ] Verify status polling and successful download flow
 
+## 10. Quality Improvements
+- [x] Add `negative_prompt` field to `GenerateRequest` and wire it through to the pipeline
+- [x] Detect CLIP token overflow (>77 tokens) and surface `prompt_truncated` warning in `StatusResponse`
+- [x] Update default `guidance_scale` from 7.5 to 9.0 for better style adherence
+
 ## 9. Security
 - [x] Add token file auth: server reads `api_token.txt` at startup, all endpoints require `Authorization: Bearer <token>`
 - [x] Server refuses to start if token file is missing or empty

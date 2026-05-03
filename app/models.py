@@ -20,6 +20,7 @@ class TaskStatus(str, Enum):
 
 class GenerateRequest(BaseModel):
     prompt: str
+    negative_prompt: Optional[str] = None
     width: Optional[int] = Field(default=DEFAULT_WIDTH, ge=64, le=2048)
     height: Optional[int] = Field(default=DEFAULT_HEIGHT, ge=64, le=2048)
     guidance_scale: Optional[float] = Field(default=DEFAULT_GUIDANCE_SCALE, ge=1.0, le=30.0)
@@ -37,3 +38,4 @@ class StatusResponse(BaseModel):
     status: TaskStatus
     progress: Optional[float] = None
     error: Optional[str] = None
+    prompt_truncated: Optional[bool] = None
