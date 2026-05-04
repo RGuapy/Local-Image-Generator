@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -10,6 +11,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.config import CLEANUP_INTERVAL_SECONDS, TOKEN_FILE
 from app.generator import cleanup_old_tasks, create_task, get_output_path, get_task
 from app.models import GenerateRequest, GenerateResponse, StatusResponse, TaskStatus
+from app.voice_generator import (
+    cleanup_old_voice_tasks,
+    create_voice_task,
+    get_voice_output_path,
+    get_voice_task,
+    start_voice_worker,
+)
+from app.voice_models import VoiceGenerateRequest, VoiceStatusResponse, VoiceTaskResponse
 
 _api_token: str = ""
 _bearer = HTTPBearer()
@@ -38,14 +47,15 @@ def _cleanup_worker():
     while True:
         time.sleep(CLEANUP_INTERVAL_SECONDS)
         cleanup_old_tasks()
+        cleanup_old_voice_tasks()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _api_token
     _api_token = _load_token()
-    thread = threading.Thread(target=_cleanup_worker, daemon=True)
-    thread.start()
+    threading.Thread(target=_cleanup_worker, daemon=True).start()
+    start_voice_worker()
     yield
 
 
@@ -77,6 +87,39 @@ async def get_status(task_id: str):
         progress=task.progress,
         error=task.error,
         prompt_truncated=task.prompt_truncated or None,
+    )
+
+
+@app.post("/voice/generate", response_model=VoiceTaskResponse, dependencies=[Depends(_verify_token)])
+async def voice_generate(request: VoiceGenerateRequest):
+    task = create_voice_task(request.text, request.language)
+    return VoiceTaskResponse(task_id=task.task_id, status=task.status)
+
+
+@app.get("/voice/status/{task_id}", response_model=VoiceStatusResponse, dependencies=[Depends(_verify_token)])
+async def voice_status(task_id: str):
+    task = get_voice_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return VoiceStatusResponse(task_id=task.task_id, status=task.status, error=task.error)
+
+
+@app.get("/voice/download/{task_id}", dependencies=[Depends(_verify_token)])
+async def voice_download(task_id: str):
+    task = get_voice_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "completed":
+        raise HTTPException(status_code=404, detail="Task not completed")
+    output_path = get_voice_output_path(task_id)
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found on disk")
+    timestamps = json.dumps([t.model_dump() for t in (task.timestamps or [])])
+    return FileResponse(
+        path=str(output_path),
+        media_type="audio/mpeg",
+        filename=f"{task_id}.mp3",
+        headers={"X-Timestamps": timestamps},
     )
 
 
