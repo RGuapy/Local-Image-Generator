@@ -48,7 +48,19 @@ def _load_tts_model():
             return _tts_model
         from chatterbox.tts import ChatterboxTTS
         device = _resolve_device()
-        _tts_model = ChatterboxTTS.from_pretrained(device=device)
+        if device == "cpu":
+            # Chatterbox checkpoints may be saved on CUDA; force CPU deserialization
+            _orig_load = torch.load
+            def _cpu_load(*args, **kwargs):
+                kwargs.setdefault("map_location", "cpu")
+                return _orig_load(*args, **kwargs)
+            torch.load = _cpu_load
+            try:
+                _tts_model = ChatterboxTTS.from_pretrained(device=device)
+            finally:
+                torch.load = _orig_load
+        else:
+            _tts_model = ChatterboxTTS.from_pretrained(device=device)
         return _tts_model
 
 
