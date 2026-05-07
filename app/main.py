@@ -69,7 +69,7 @@ app.add_middleware(
 
 @app.post("/voice/generate", response_model=VoiceTaskResponse, dependencies=[Depends(_verify_token)])
 async def voice_generate(request: VoiceGenerateRequest):
-    task = create_voice_task(request.text, request.language)
+    task = create_voice_task(request.text, request.language, request.exaggeration)
     return VoiceTaskResponse(task_id=task.task_id, status=task.status)
 
 

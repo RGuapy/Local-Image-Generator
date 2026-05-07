@@ -18,6 +18,9 @@ VOICE_FORMAT = "wav"
 
 _tts_model = None
 _tts_lock = threading.Lock()
+_mms_pt_model = None
+_mms_pt_tokenizer = None
+_mms_pt_lock = threading.Lock()
 _voice_queue: queue.Queue = queue.Queue()
 
 
@@ -27,6 +30,7 @@ class VoiceTask:
     status: str  # queued | running | completed | failed
     text: str
     language: str
+    exaggeration: float = 0.8
     error: Optional[str] = None
     timestamps: Optional[List[WordTimestamp]] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -64,11 +68,32 @@ def _load_tts_model():
         return _tts_model
 
 
-def synthesize(text: str, output_path: Path) -> None:
-    model = _load_tts_model()
-    wav = model.generate(text)
+def _load_mms_pt_model():
+    global _mms_pt_model, _mms_pt_tokenizer
+    with _mms_pt_lock:
+        if _mms_pt_model is not None:
+            return _mms_pt_model, _mms_pt_tokenizer
+        from transformers import AutoTokenizer, VitsModel
+        _mms_pt_tokenizer = AutoTokenizer.from_pretrained("facebook/mms-tts-por")
+        _mms_pt_model = VitsModel.from_pretrained("facebook/mms-tts-por")
+        _mms_pt_model.eval()
+        return _mms_pt_model, _mms_pt_tokenizer
+
+
+def synthesize(text: str, output_path: Path, language: str = "en", exaggeration: float = 0.8) -> None:
     VOICE_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    torchaudio.save(str(output_path), wav.cpu(), CHATTERBOX_SAMPLE_RATE, format=VOICE_FORMAT)
+    if language == "pt":
+        model, tokenizer = _load_mms_pt_model()
+        inputs = tokenizer(text, return_tensors="pt")
+        # MMS has no emotion model; map exaggeration linearly to speaking_rate as a proxy
+        speaking_rate = 0.85 + exaggeration * 0.43
+        with torch.no_grad():
+            wav = model(**inputs, speaking_rate=speaking_rate).waveform
+        torchaudio.save(str(output_path), wav.cpu(), model.config.sampling_rate, format=VOICE_FORMAT)
+    else:
+        model = _load_tts_model()
+        wav = model.generate(text, exaggeration=exaggeration)
+        torchaudio.save(str(output_path), wav.cpu(), CHATTERBOX_SAMPLE_RATE, format=VOICE_FORMAT)
 
 
 def align(audio_path: Path, text: str, language: str) -> List[WordTimestamp]:
@@ -103,7 +128,7 @@ def align(audio_path: Path, text: str, language: str) -> List[WordTimestamp]:
     return words
 
 
-def run_voice_task(task_id: str, text: str, language: str) -> None:
+def run_voice_task(task_id: str, text: str, language: str, exaggeration: float) -> None:
     task = _voice_tasks.get(task_id)
     if task is None:
         return
@@ -111,7 +136,7 @@ def run_voice_task(task_id: str, text: str, language: str) -> None:
     task.status = "running"
     try:
         output_path = get_voice_output_path(task_id)
-        synthesize(text, output_path)
+        synthesize(text, output_path, language, exaggeration)
         task.timestamps = align(output_path, text, language)
         task.status = "completed"
     except Exception as exc:
@@ -121,9 +146,9 @@ def run_voice_task(task_id: str, text: str, language: str) -> None:
 
 def _voice_worker() -> None:
     while True:
-        task_id, text, language = _voice_queue.get()
+        task_id, text, language, exaggeration = _voice_queue.get()
         try:
-            run_voice_task(task_id, text, language)
+            run_voice_task(task_id, text, language, exaggeration)
         finally:
             _voice_queue.task_done()
 
@@ -133,11 +158,11 @@ def start_voice_worker() -> None:
     thread.start()
 
 
-def create_voice_task(text: str, language: str) -> VoiceTask:
+def create_voice_task(text: str, language: str, exaggeration: float = 0.8) -> VoiceTask:
     task_id = str(uuid.uuid4())
-    task = VoiceTask(task_id=task_id, status="queued", text=text, language=language)
+    task = VoiceTask(task_id=task_id, status="queued", text=text, language=language, exaggeration=exaggeration)
     _voice_tasks[task_id] = task
-    _voice_queue.put((task_id, text, language))
+    _voice_queue.put((task_id, text, language, exaggeration))
     return task
 
 
