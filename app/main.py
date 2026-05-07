@@ -9,8 +9,6 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import CLEANUP_INTERVAL_SECONDS, TOKEN_FILE
-from app.generator import cleanup_old_tasks, create_task, get_output_path, get_task
-from app.models import GenerateRequest, GenerateResponse, StatusResponse, TaskStatus
 from app.voice_generator import (
     cleanup_old_voice_tasks,
     create_voice_task,
@@ -46,7 +44,6 @@ async def _verify_token(
 def _cleanup_worker():
     while True:
         time.sleep(CLEANUP_INTERVAL_SECONDS)
-        cleanup_old_tasks()
         cleanup_old_voice_tasks()
 
 
@@ -68,26 +65,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.post("/generate", response_model=GenerateResponse, dependencies=[Depends(_verify_token)])
-async def generate(request: GenerateRequest):
-    task = create_task(request)
-    return GenerateResponse(task_id=task.task_id, status=task.status)
-
-
-@app.get("/status/{task_id}", response_model=StatusResponse, dependencies=[Depends(_verify_token)])
-async def get_status(task_id: str):
-    task = get_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return StatusResponse(
-        task_id=task.task_id,
-        status=task.status,
-        progress=task.progress,
-        error=task.error,
-        prompt_truncated=task.prompt_truncated or None,
-    )
 
 
 @app.post("/voice/generate", response_model=VoiceTaskResponse, dependencies=[Depends(_verify_token)])
@@ -123,27 +100,3 @@ async def voice_download(task_id: str):
     )
 
 
-@app.get("/download/{task_id}", dependencies=[Depends(_verify_token)])
-async def download(task_id: str):
-    task = get_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    if task.status in (TaskStatus.queued, TaskStatus.running):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Task is not yet complete (status: {task.status})",
-        )
-
-    if task.status == TaskStatus.failed:
-        raise HTTPException(status_code=422, detail=f"Task failed: {task.error}")
-
-    output_path = get_output_path(task_id)
-    if not output_path.exists():
-        raise HTTPException(status_code=404, detail="Output file not found on disk")
-
-    return FileResponse(
-        path=str(output_path),
-        media_type="image/png",
-        filename=f"{task_id}.png",
-    )
