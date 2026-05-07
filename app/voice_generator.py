@@ -72,17 +72,15 @@ def synthesize(text: str, output_path: Path) -> None:
 
 
 def align(audio_path: Path, text: str, language: str) -> List[WordTimestamp]:
-    import whisperx
+    from faster_whisper import WhisperModel
     device = _resolve_device()
-    audio = whisperx.load_audio(str(audio_path))
-    whisper_model = whisperx.load_model("base", device, compute_type="int8")
-    result = whisper_model.transcribe(audio, batch_size=4, language=language)
-    align_model, metadata = whisperx.load_align_model(language_code=language, device=device)
-    aligned = whisperx.align(result["segments"], align_model, metadata, audio, device)
-    return [
-        WordTimestamp(word=w["word"], start=w["start"], end=w["end"])
-        for w in aligned.get("word_segments", [])
-    ]
+    model = WhisperModel("base", device=device, compute_type="int8")
+    segments, _ = model.transcribe(str(audio_path), word_timestamps=True, language=language)
+    words = []
+    for segment in segments:
+        for word in (segment.words or []):
+            words.append(WordTimestamp(word=word.word.strip(), start=word.start, end=word.end))
+    return words
 
 
 def run_voice_task(task_id: str, text: str, language: str) -> None:
