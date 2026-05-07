@@ -18,10 +18,13 @@ VOICE_FORMAT = "wav"
 
 _tts_model = None
 _tts_lock = threading.Lock()
-_mms_pt_model = None
-_mms_pt_tokenizer = None
-_mms_pt_lock = threading.Lock()
+_fish_queue = None
+_fish_tokenizer = None
+_fish_decoder = None
+_fish_lock = threading.Lock()
 _voice_queue: queue.Queue = queue.Queue()
+
+FISH_SAMPLE_RATE = 44100
 
 
 @dataclass
@@ -68,28 +71,75 @@ def _load_tts_model():
         return _tts_model
 
 
-def _load_mms_pt_model():
-    global _mms_pt_model, _mms_pt_tokenizer
-    with _mms_pt_lock:
-        if _mms_pt_model is not None:
-            return _mms_pt_model, _mms_pt_tokenizer
-        from transformers import AutoTokenizer, VitsModel
-        _mms_pt_tokenizer = AutoTokenizer.from_pretrained("facebook/mms-tts-por")
-        _mms_pt_model = VitsModel.from_pretrained("facebook/mms-tts-por")
-        _mms_pt_model.eval()
-        return _mms_pt_model, _mms_pt_tokenizer
+def _load_fish_speech_models():
+    global _fish_queue, _fish_tokenizer, _fish_decoder
+    with _fish_lock:
+        if _fish_queue is not None:
+            return _fish_queue, _fish_tokenizer, _fish_decoder
+        import torch
+        from pathlib import Path as _Path
+        from huggingface_hub import snapshot_download
+        from fish_speech.models.text2semantic.inference import launch_thread_safe_queue
+        from fish_speech.models.vqgan.inference import load_model as load_decoder
+        device = _resolve_device()
+        precision = torch.float16 if device == "cuda" else torch.float32
+        repo_dir = _Path(snapshot_download("fishaudio/fish-speech-1.5"))
+        _fish_queue, _fish_tokenizer, _ = launch_thread_safe_queue(
+            checkpoint_path=repo_dir,
+            device=device,
+            precision=precision,
+            compile=False,
+        )
+        _fish_decoder = load_decoder(
+            config_name="firefly_gan_vq",
+            checkpoint_path=repo_dir,
+            device=device,
+            precision=precision,
+        )
+        return _fish_queue, _fish_tokenizer, _fish_decoder
+
+
+def _synthesize_fish_speech(text: str, output_path: Path, exaggeration: float) -> None:
+    import numpy as np
+    from fish_speech.models.text2semantic.inference import InferenceRequest, GenerateResponse
+    from fish_speech.models.vqgan.inference import decode_vq_tokens
+    llm_queue, tokenizer, decoder = _load_fish_speech_models()
+    # Map exaggeration to LLM temperature: 0.0 → 0.5 (calm), 1.5 → 1.25 (very expressive)
+    temperature = 0.5 + exaggeration * 0.5
+    request = InferenceRequest(
+        device=_resolve_device(),
+        max_new_tokens=1024,
+        text=[text],
+        top_p=0.7,
+        repetition_penalty=1.3,
+        temperature=temperature,
+    )
+    llm_queue.put(request)
+    segments = []
+    while True:
+        wrapped = request.response_queue.get()
+        if wrapped is None:
+            break
+        if wrapped == "error" or (hasattr(wrapped, "status") and wrapped.status == "error"):
+            raise RuntimeError(f"Fish Speech LLM error: {getattr(wrapped, 'response', wrapped)}")
+        resp = wrapped.response if hasattr(wrapped, "response") else wrapped
+        if isinstance(resp, GenerateResponse):
+            chunk = decode_vq_tokens(
+                model=decoder,
+                codes=resp.codes.squeeze(0).T.tolist(),
+            )
+            segments.append(chunk)
+    if not segments:
+        raise RuntimeError("Fish Speech returned no audio segments")
+    audio = np.concatenate(segments)
+    audio_tensor = torch.from_numpy(audio).unsqueeze(0)
+    torchaudio.save(str(output_path), audio_tensor, FISH_SAMPLE_RATE, format=VOICE_FORMAT)
 
 
 def synthesize(text: str, output_path: Path, language: str = "en", exaggeration: float = 0.8) -> None:
     VOICE_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     if language == "pt":
-        model, tokenizer = _load_mms_pt_model()
-        inputs = tokenizer(text, return_tensors="pt")
-        # MMS has no emotion model; map exaggeration linearly to speaking_rate as a proxy
-        speaking_rate = 0.85 + exaggeration * 0.43
-        with torch.no_grad():
-            wav = model(**inputs, speaking_rate=speaking_rate).waveform
-        torchaudio.save(str(output_path), wav.cpu(), model.config.sampling_rate, format=VOICE_FORMAT)
+        _synthesize_fish_speech(text, output_path, exaggeration)
     else:
         model = _load_tts_model()
         wav = model.generate(text, exaggeration=exaggeration)

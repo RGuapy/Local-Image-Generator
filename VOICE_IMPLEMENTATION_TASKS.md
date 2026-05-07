@@ -41,6 +41,13 @@
   - Return 404 if task not completed or file missing
   - Require Bearer token auth
 
+## 8. Portuguese TTS Backend
+- [x] Replace `facebook/mms-tts-por` (MMS VITS) with Fish Speech 1.5 (`fishaudio/fish-speech-1.5`)
+- [x] Add `fish-speech` and `huggingface_hub>=0.20.0` to `requirements.txt`
+- [x] Load Fish Speech LLM + VQGAN decoder lazily on first `"pt"` request
+- [x] Map `exaggeration` to LLM `temperature` (`0.5 + exaggeration × 0.5`)
+- [x] Update `VOICE_STYLES.md` to document Fish Speech's real emotion control
+
 ## 7. Testing and Validation
 - [ ] Test `POST /voice/generate` with a short English sentence
 - [ ] Verify WAV file is saved to `outputs/voice/`

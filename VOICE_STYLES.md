@@ -29,22 +29,22 @@ Controls emotional expressiveness. Passed in the `POST /voice/generate` request 
 
 `exaggeration` maps directly to Chatterbox's built-in emotion parameter. The model has genuine prosody control: pitch range, speaking energy, and emphasis all scale with this value. Results are highly expressive at `0.8`+.
 
-### Portuguese / Brazilian (`"pt"`) — Facebook MMS VITS
+### Portuguese / Brazilian (`"pt"`) — Fish Speech 1.5
 
-The MMS model does not have native emotion control. `exaggeration` is mapped to **speaking rate** as a proxy for energy:
+Fish Speech is a multilingual neural TTS with genuine prosody and emotion control. `exaggeration` is mapped to the LLM **temperature** parameter, which controls how varied and expressive the delivery is:
 
 ```
-speaking_rate = 0.85 + exaggeration × 0.43
+temperature = 0.5 + exaggeration × 0.5
 ```
 
-| exaggeration | speaking_rate | Feel |
+| exaggeration | temperature | Feel |
 |---|---|---|
-| 0.0 | 0.85 | Slow / calm |
-| 0.4 | 1.02 | Normal pace |
-| 0.8 *(default)* | 1.19 | Fast / energetic |
-| 1.5 | 1.50 | Very fast |
+| 0.0 | 0.50 | Flat / monotone |
+| 0.4 | 0.70 | Natural, even-paced |
+| 0.8 *(default)* | 0.90 | Warm, expressive |
+| 1.5 | 1.25 | Highly varied, dramatic |
 
-Pitch and intonation variation are fixed in MMS; only pace changes. For a more expressive Brazilian Portuguese voice, consider a XTTS v2 or Coqui model in the future.
+Pitch, intonation, and rhythm all vary naturally with temperature. Higher values add more spontaneous inflection; very high values (1.2+) may introduce occasional pronunciation artifacts.
 
 ---
 
