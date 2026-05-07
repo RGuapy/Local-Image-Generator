@@ -4,7 +4,6 @@ torch>=2.2.0
 torchaudio>=2.2.0
 transformers>=4.40.0
 pydantic>=2.7.0
-numpy<2.0
 chatterbox-tts
 whisperx
 ctranslate2>=3.20.0,<4.0.0
