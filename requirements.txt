@@ -3,7 +3,6 @@ uvicorn[standard]>=0.29.0
 torch>=2.2.0
 torchaudio>=2.2.0
 transformers>=4.40.0
+accelerate>=0.26.0
 pydantic>=2.7.0
 chatterbox-tts
-faster-whisper
-ctranslate2>=3.20.0,<4.0.0

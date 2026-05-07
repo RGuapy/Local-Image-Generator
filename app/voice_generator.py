@@ -14,7 +14,7 @@ from app.voice_models import WordTimestamp
 
 VOICE_OUTPUTS_DIR = OUTPUTS_DIR / "voice"
 CHATTERBOX_SAMPLE_RATE = 24000
-VOICE_FORMAT = "mp3"
+VOICE_FORMAT = "wav"
 
 _tts_model = None
 _tts_lock = threading.Lock()
@@ -72,14 +72,34 @@ def synthesize(text: str, output_path: Path) -> None:
 
 
 def align(audio_path: Path, text: str, language: str) -> List[WordTimestamp]:
-    from faster_whisper import WhisperModel
+    from transformers import pipeline as hf_pipeline
     device = _resolve_device()
-    model = WhisperModel("base", device=device, compute_type="int8")
-    segments, _ = model.transcribe(str(audio_path), word_timestamps=True, language=language)
+
+    waveform, sample_rate = torchaudio.load(str(audio_path))
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if sample_rate != 16000:
+        waveform = torchaudio.transforms.Resample(sample_rate, 16000)(waveform)
+    audio_array = waveform.squeeze().numpy().astype("float32")
+
+    asr = hf_pipeline(
+        "automatic-speech-recognition",
+        model="openai/whisper-base",
+        device=0 if device == "cuda" else -1,
+        return_timestamps="word",
+    )
+    result = asr({"raw": audio_array, "sampling_rate": 16000}, generate_kwargs={"language": language})
+
     words = []
-    for segment in segments:
-        for word in (segment.words or []):
-            words.append(WordTimestamp(word=word.word.strip(), start=word.start, end=word.end))
+    for chunk in result.get("chunks") or []:
+        ts = chunk.get("timestamp")
+        if ts and len(ts) == 2:
+            start, end = ts
+            words.append(WordTimestamp(
+                word=chunk["text"].strip(),
+                start=float(start or 0.0),
+                end=float(end or 0.0),
+            ))
     return words
 
 

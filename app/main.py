@@ -94,8 +94,8 @@ async def voice_download(task_id: str):
     timestamps = json.dumps([t.model_dump() for t in (task.timestamps or [])])
     return FileResponse(
         path=str(output_path),
-        media_type="audio/mpeg",
-        filename=f"{task_id}.mp3",
+        media_type="audio/wav",
+        filename=f"{task_id}.wav",
         headers={"X-Timestamps": timestamps},
     )
 
